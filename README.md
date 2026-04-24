@@ -20,18 +20,20 @@ uv tool install git+https://github.com/abidsikder/takethewheel.git
 
 ## Usage
 
-Gemini Flash and Pro (via OpenRouter):
+Gemini Flash and Pro (via OpenRouter)
 ```sh
 takethewheel flash
 ```
 ```sh
 takethewheel pro
 ```
+Make sure an `OPENROUTER_API_KEY` is in your env.
 
 GLM 5 (via Bedrock Mantle):
 ```sh
 takethewheel glm
 ```
+Make sure an `AWS_BEARER_TOKEN_BEDROCK` is in your env.
 
 ## Context via AGENTS.md
 
