@@ -1,5 +1,5 @@
 [project]
-name = "take-the-wheel"
+name = "takethewheel"
 version = "0.1.0"
 description = "Simple, opinionated coding agent."
 readme = "README.md"
@@ -18,7 +18,7 @@ requires = ["uv_build>=0.11.7,<0.12.0"]
 build-backend = "uv_build"
 
 [project.scripts]
-takethewheel = "take_the_wheel:cli"
+takethewheel = "takethewheel:cli"
 
 [tool.uv]
 exclude-newer = "3 days"
