@@ -23,7 +23,7 @@ def cli():
             model = "google/gemini-3.1-pro-preview"
         case "glm":
             provider = "bedrock"
-            model = "glm 5"
+            model = "zai.glm-5"
         case _:
             print("Improper argument", file=sys.stderr)
             sys.exit(1)
