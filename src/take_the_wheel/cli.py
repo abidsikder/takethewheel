@@ -63,7 +63,7 @@ def cli():
             messages[0]["content"] += "\n"
             expanded_lines = []
             for line in agents_md_path.read_text().splitlines():
-                if line[0] == "@":
+                if line and line[0] == "@":
                     filepath = Path(line[1:].strip()).resolve()
                     if not filepath.exists():
                         raise FileNotFoundError(f"Included file not found: {filepath}")
