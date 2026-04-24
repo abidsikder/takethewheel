@@ -1,0 +1,27 @@
+[project]
+name = "take-the-wheel"
+version = "0.1.0"
+description = "Simple, opinionated coding agent."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "niquests[http3,speedups]>=3.18.6",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.11",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.7,<0.12.0"]
+build-backend = "uv_build"
+
+[project.scripts]
+takethewheel = "take_the_wheel:cli"
+
+[tool.uv]
+exclude-newer = "3 days"
+
+[tool.ruff.lint]
+extend-select = ["I"]

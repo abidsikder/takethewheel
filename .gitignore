@@ -1,0 +1,16 @@
+# git worktree
+commondir
+gitdir
+HEAD
+index
+index.lock
+COMMIT_EDITMSG
+ORIG_HEAD
+
+# cpython
+__pycache__
+.venv
+.python-version
+
+# misc
+.env
