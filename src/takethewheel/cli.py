@@ -21,29 +21,34 @@ def cli():
         case "pro":
             provider = "openrouter"
             model = "google/gemini-3.1-pro-preview"
-        case "glm":
+        case "opus":
             provider = "bedrock"
-            model = "zai.glm-5"
+            model = "anthropic.claude-opus-4-7"
         case _:
             print("Improper argument", file=sys.stderr)
             sys.exit(1)
 
     api_key: str | None = None
     api_url: str | None = None
+    is_anthropic = False
     match provider:
         case "openrouter":
             api_key = os.environ["OPENROUTER_API_KEY"]
             api_url = "https://openrouter.ai/api/v1/chat/completions"
         case "bedrock":
             api_key = os.environ["AWS_BEARER_TOKEN_BEDROCK"]
-            api_url = "https://bedrock-mantle.us-east-1.api.aws/v1/chat/completions"
+            api_url = "https://bedrock-mantle.us-east-1.api.aws/anthropic/v1/messages"
+            is_anthropic = True
 
     with niquests.Session() as s:
         s.headers.update(
             {
+                "Content-Type": "application/json",
                 "Authorization": f"Bearer {api_key}",
             }
         )
+        if is_anthropic:
+            s.headers.update({"anthropic-version": "2023-06-01"})
         system_prompt_pieces = [
             "agentic code editor",
             "allowed to use bash tools, can write content to any file using the write tool",
@@ -53,18 +58,13 @@ def cli():
             "keep text responses short, succinct, brief",
             "keep things simple simple simple",
         ]
-        messages = [
-            {
-                "role": "system",
-                "content": " ".join(system_prompt_pieces),
-            },
-        ]
+        system_prompt = " ".join(system_prompt_pieces)
 
         # include agents.md files into context
         # for every line that starts with @ and has a valid filepath after it, include that in the context as well
         agents_md_path = Path("./agents.md")
         if agents_md_path.exists():
-            messages[0]["content"] += "\n"
+            system_prompt += "\n"
             expanded_lines = []
             for line in agents_md_path.read_text().splitlines():
                 if line and line[0] == "@":
@@ -75,15 +75,25 @@ def cli():
                     expanded_lines.append(filepath.read_text())
                 else:
                     expanded_lines.append(line)
-            messages[0]["content"] += "\n".join(expanded_lines)
+            system_prompt += "\n".join(expanded_lines)
 
-        tools = [
-            {
-                "type": "function",
-                "function": {
+        messages = []
+        if not is_anthropic:
+            messages = [
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                },
+            ]
+
+        tools = None
+        # Anthropic style
+        if is_anthropic:
+            tools = [
+                {
                     "name": "bash",
                     "description": "Execute command in bash",
-                    "parameters": {
+                    "input_schema": {
                         "type": "object",
                         "properties": {
                             "command": {"type": "string", "description": "Command"}
@@ -91,13 +101,10 @@ def cli():
                         "required": ["command"],
                     },
                 },
-            },
-            {
-                "type": "function",
-                "function": {
+                {
                     "name": "write",
                     "description": "Write contents entirely to filepath",
-                    "parameters": {
+                    "input_schema": {
                         "type": "object",
                         "properties": {
                             "filepath": {"type": "string"},
@@ -106,8 +113,40 @@ def cli():
                         "required": ["filepath", "contents"],
                     },
                 },
-            },
-        ]
+            ]
+        # OpenAI style
+        else:
+            tools = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "bash",
+                        "description": "Execute command in bash",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "command": {"type": "string", "description": "Command"}
+                            },
+                            "required": ["command"],
+                        },
+                    },
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "write",
+                        "description": "Write contents entirely to filepath",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "filepath": {"type": "string"},
+                                "contents": {"type": "string"},
+                            },
+                            "required": ["filepath", "contents"],
+                        },
+                    },
+                },
+            ]
 
         print("Press Ctrl-C or Ctrl-D to exit", file=sys.stderr)
         turn = 0
@@ -121,14 +160,23 @@ def cli():
                 while True:
                     sys.stdout.write(f"{purple}Communicating with AI service...{reset}")
                     sys.stdout.flush()
-                    r = s.post(
-                        api_url,
-                        json={
+
+                    # Build payload
+                    if is_anthropic:
+                        payload = {
                             "model": model,
+                            # max tokens is required parameter for some reason
+                            # 128,000 is the maximum max_tokens
+                            "max_tokens": 128_000,
+                            "system": system_prompt,
                             "messages": messages,
                             "tools": tools,
-                            "tool_choice": "auto",
-                        },
+                        }
+                    else:
+                        payload = {"model": model, "messages": messages, "tools": tools}
+                    r = s.post(
+                        api_url,
+                        json=payload,
                     )
                     r.raise_for_status()
                     response = r.json()
@@ -139,33 +187,74 @@ def cli():
                     turn += 1
                     print(f"{purple}[trn]{reset} {turn}")
 
-                    ai_message = response["choices"][0]["message"]
-                    txt = ai_message["content"]
-                    if txt is not None:
-                        messages.append({"role": "assistant", "content": txt})
-                        print(f"{purple}[txt]{reset}", txt)
+                    txt: str | None = None
+                    tool_calls = []
+                    if is_anthropic:
+                        for block in response["content"]:
+                            match block["type"]:
+                                case "text":
+                                    txt = block["text"]
+                                case "tool_use":
+                                    tool_calls.append(block)
+                        messages.append(
+                            {"role": "assistant", "content": response["content"]}
+                        )
+                        if txt is not None:
+                            print(f"{purple}[txt]{reset}", txt)
+                    else:
+                        ai_message = response["choices"][0]["message"]
+                        txt = ai_message["content"]
+                        tool_calls = ai_message["tool_calls"]
+                        if txt is not None:
+                            messages.append({"role": "assistant", "content": txt})
+                            print(f"{purple}[txt]{reset}", txt)
 
-                    if "tool_calls" not in ai_message:
-                        break
+                    # it has to be nested, otherwise on anthropic calls with no tool calls it will check for tool_calls in ai_message
+                    if is_anthropic:
+                        if len(tool_calls) == 0:
+                            break
+                    else:
+                        if "tool_calls" not in ai_message:
+                            break
 
                     # Keep track if a tool fails so we skip remaining tools in the batch
                     skip_remaining = False
 
-                    for tool_call in ai_message["tool_calls"]:
+                    if is_anthropic:
+                        tool_results = []  # collect all for the anthropic style
+                    for tool_call in tool_calls:
                         tool_call_id = tool_call["id"]
-                        function_name = tool_call["function"]["name"]
+                        if is_anthropic:
+                            function_name = tool_call["name"]
+                            arguments = tool_call["input"]
+                        else:
+                            function_name = tool_call["function"]["name"]
+                            arguments = orjson.loads(tool_call["function"]["arguments"])
+
+                        def record_result(content: str):
+                            if is_anthropic:
+                                tool_results.append(
+                                    {
+                                        "type": "tool_result",
+                                        "tool_use_id": tool_call_id,
+                                        "content": content,
+                                    }
+                                )
+                            else:
+                                messages.append(
+                                    {
+                                        "role": "tool",
+                                        "tool_call_id": tool_call_id,
+                                        "name": function_name,
+                                        "content": content,
+                                    }
+                                )
+
                         if skip_remaining:
-                            messages.append(
-                                {
-                                    "role": "tool",
-                                    "tool_call_id": tool_call_id,
-                                    "name": function_name,
-                                    "content": "Skipped: previous tool in batch returned non-zero exit code",
-                                }
+                            record_result(
+                                "Skipped: previous tool in batch returned non-zero exit code"
                             )
                             continue
-
-                        arguments = orjson.loads(tool_call["function"]["arguments"])
 
                         if function_name == "bash":
                             cmd = arguments["command"]
@@ -190,14 +279,7 @@ def cli():
                             if stderr:
                                 output_msg += f"\nstderr:\n{stderr}"
 
-                            messages.append(
-                                {
-                                    "role": "tool",
-                                    "tool_call_id": tool_call_id,
-                                    "name": function_name,
-                                    "content": output_msg,
-                                }
-                            )
+                            record_result(output_msg)
 
                             if exit_code != 0:
                                 skip_remaining = True  # Stop executing subsequent commands in this batch
@@ -211,26 +293,15 @@ def cli():
                             try:
                                 Path(filepath).parent.mkdir(parents=True, exist_ok=True)
                                 Path(filepath).write_text(contents)
-                                messages.append(
-                                    {
-                                        "role": "tool",
-                                        "tool_call_id": tool_call_id,
-                                        "name": function_name,
-                                        "content": f"Successfully wrote to {filepath}",
-                                    }
-                                )
+                                record_result(f"Successfully wrote to {filepath}")
                             except Exception as e:
                                 error_msg = f"file write error {filepath}: {str(e)}"
                                 print(f"{purple}[wrt] [errr]{reset}", str(e))
-                                messages.append(
-                                    {
-                                        "role": "tool",
-                                        "tool_call_id": tool_call_id,
-                                        "name": function_name,
-                                        "content": error_msg,
-                                    }
-                                )
+                                record_result(error_msg)
                                 skip_remaining = True
+
+                    if is_anthropic and tool_results:
+                        messages.append({"role": "user", "content": tool_results})
 
             except KeyboardInterrupt, EOFError:
                 print("\nExiting...", file=sys.stderr)
