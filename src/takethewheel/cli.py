@@ -204,7 +204,6 @@ def cli():
                     else:
                         ai_message = response["choices"][0]["message"]
                         txt = ai_message["content"]
-                        tool_calls = ai_message["tool_calls"]
                         if txt is not None:
                             messages.append({"role": "assistant", "content": txt})
                             print(f"{purple}[txt]{reset}", txt)
@@ -216,6 +215,8 @@ def cli():
                     else:
                         if "tool_calls" not in ai_message:
                             break
+                        else:
+                            tool_calls = ai_message["tool_calls"]
 
                     # Keep track if a tool fails so we skip remaining tools in the batch
                     skip_remaining = False
