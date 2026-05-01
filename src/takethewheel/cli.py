@@ -14,6 +14,8 @@ reset = "\033[0m"
 def cli():
     provider: Literal["openrouter", "bedrock"] | None = None
     model: str | None = None
+    is_gemma = False
+    is_anthropic = False
     match sys.argv[1]:
         case "flash":
             provider = "openrouter"
@@ -21,16 +23,20 @@ def cli():
         case "pro":
             provider = "openrouter"
             model = "google/gemini-3.1-pro-preview"
+        case "gemma":
+            provider = "openrouter"
+            model = "google/gemma-4-31b-it"
+            is_gemma = True
         case "opus":
             provider = "bedrock"
             model = "anthropic.claude-opus-4-7"
+            is_anthropic = True
         case _:
             print("Improper argument", file=sys.stderr)
             sys.exit(1)
 
     api_key: str | None = None
     api_url: str | None = None
-    is_anthropic = False
     match provider:
         case "openrouter":
             api_key = os.environ["OPENROUTER_API_KEY"]
@@ -38,7 +44,6 @@ def cli():
         case "bedrock":
             api_key = os.environ["AWS_BEARER_TOKEN_BEDROCK"]
             api_url = "https://bedrock-mantle.us-east-1.api.aws/anthropic/v1/messages"
-            is_anthropic = True
 
     with niquests.Session() as s:
         s.headers.update(
@@ -174,6 +179,11 @@ def cli():
                         }
                     else:
                         payload = {"model": model, "messages": messages, "tools": tools}
+                        if is_gemma:
+                            payload["reasoning"] = {"enabled": True}
+                            payload["provider"] = {
+                                "sort": "exacto"  # there are some crazy quantized versions of gemma4 on openrouter lol
+                            }
                     r = s.post(
                         api_url,
                         json=payload,

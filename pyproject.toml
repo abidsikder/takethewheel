@@ -2,7 +2,6 @@
 name = "takethewheel"
 version = "0.1.0"
 description = "Simple, opinionated coding agent."
-readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "niquests[http3,speedups]>=3.18.6",
