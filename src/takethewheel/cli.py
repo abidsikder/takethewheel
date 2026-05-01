@@ -22,6 +22,9 @@ def cli():
         case "pro":
             provider = "openrouter"
             model = "google/gemini-3.1-pro-preview"
+        case "deepseek":
+            provider = "openrouter"
+            model = "deepseek/deepseek-v4-pro"
         case "opus":
             provider = "bedrock"
             model = "anthropic.claude-opus-4-7"
@@ -173,7 +176,10 @@ def cli():
                             "tools": tools,
                         }
                     else:
-                        payload = {"model": model, "messages": messages, "tools": tools}
+                        payload = {"model": model, "messages": messages, "tools": tools,
+                        "provider": {
+                            "sort": "exacto"
+                        }}
                     r = s.post(
                         api_url,
                         json=payload,
